@@ -3,9 +3,43 @@
 // ---------------------------------------------------------------------------
 
 const STATION_ID = "IGREIF68";
-const DATE_COLUMN = 2;   // Column B
-const PRECIP_COLUMN = 6; // Column F
 const DATA_START_ROW = 2; // Row 1 is the header
+const HEADER_ROW = 1;
+
+// Column header names used to find indices dynamically (robust to column reordering).
+const DATE_HEADER = "Datum";
+const PRECIP_HEADER = "Niederschlag_total_mm";
+
+// ---------------------------------------------------------------------------
+// Header / column resolution
+// ---------------------------------------------------------------------------
+
+/**
+ * Reads the header row and returns 1-based column indices for date and precipitation.
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet
+ * @returns {{ dateColumn: number, precipColumn: number }}
+ */
+function getColumnIndicesFromHeader(sheet) {
+  const lastCol = sheet.getLastColumn();
+  if (lastCol < 1) {
+    throw new Error("Sheet has no header row.");
+  }
+  const headerRow = sheet.getRange(HEADER_ROW, 1, HEADER_ROW, lastCol).getValues()[0];
+  let dateColumn = null;
+  let precipColumn = null;
+  for (let c = 0; c < headerRow.length; c++) {
+    const label = String(headerRow[c] || "").trim();
+    if (label === DATE_HEADER) dateColumn = c + 1;
+    if (label === PRECIP_HEADER) precipColumn = c + 1;
+  }
+  if (dateColumn == null) {
+    throw new Error(`Header "${DATE_HEADER}" not found in row ${HEADER_ROW}. Check column order.`);
+  }
+  if (precipColumn == null) {
+    throw new Error(`Header "${PRECIP_HEADER}" not found in row ${HEADER_ROW}. Check column order.`);
+  }
+  return { dateColumn, precipColumn };
+}
 
 // ---------------------------------------------------------------------------
 // Main entry point — assign this function to your daily time trigger
@@ -22,9 +56,12 @@ function run() {
     return;
   }
 
+  const { dateColumn, precipColumn } = getColumnIndicesFromHeader(sheet);
+  Logger.log(`Using columns: ${DATE_HEADER}=${dateColumn}, ${PRECIP_HEADER}=${precipColumn}`);
+
   const rowCount     = lastRow - DATA_START_ROW + 1;
-  const dateValues   = sheet.getRange(DATA_START_ROW, DATE_COLUMN,   rowCount, 1).getValues();
-  const precipValues = sheet.getRange(DATA_START_ROW, PRECIP_COLUMN, rowCount, 1).getValues();
+  const dateValues   = sheet.getRange(DATA_START_ROW, dateColumn,   rowCount, 1).getValues();
+  const precipValues = sheet.getRange(DATA_START_ROW, precipColumn, rowCount, 1).getValues();
 
   // Yesterday as a YYYY-MM-DD string — we never fill data for today or future dates
   const yesterday = new Date();
@@ -32,7 +69,7 @@ function run() {
   const yesterdayStr = Utilities.formatDate(yesterday, Session.getScriptTimeZone(), "yyyy-MM-dd");
   Logger.log(`Considering dates up to ${yesterdayStr}. Scanning ${rowCount} row(s)...`);
 
-  // Collect rows that have a date in column B but no value in column F
+  // Collect rows that have a date but no precipitation value
   const missingRows = []; // [{ row, date }]
 
   for (let i = 0; i < rowCount; i++) {
@@ -64,12 +101,13 @@ function run() {
 
   const apiKey    = getApiKey();
   const precipMap = fetchPrecipitationMap(STATION_ID, startDate, endDate, apiKey);
-  Logger.log(`API returned data for ${Object.keys(precipMap).length} day(s).`);
+  const precipDates = Object.keys(precipMap).sort();
+  Logger.log(`API returned data for ${precipDates.length} day(s): ${precipDates.join(", ")}`);
 
   let updated = 0;
   for (const { row, date } of missingRows) {
     if (Object.prototype.hasOwnProperty.call(precipMap, date)) {
-      sheet.getRange(row, PRECIP_COLUMN).setValue(precipMap[date]);
+      sheet.getRange(row, precipColumn).setValue(precipMap[date]);
       updated++;
     } else {
       Logger.log(`  No API data for ${date} (row ${row}).`);
