@@ -5,6 +5,7 @@
 const STATION_ID = "IGREIF68";
 const DATA_START_ROW = 2; // Row 1 is the header
 const HEADER_ROW = 1;
+const MAX_LOOKBACK_DAYS = 30; // Only fetch precipitation for this many days back
 
 // Column header names used to find indices dynamically (robust to column reordering).
 const DATE_HEADER = "Datum";
@@ -67,7 +68,11 @@ function run() {
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
   const yesterdayStr = Utilities.formatDate(yesterday, Session.getScriptTimeZone(), "yyyy-MM-dd");
-  Logger.log(`Considering dates up to ${yesterdayStr}. Scanning ${rowCount} row(s)...`);
+  // Only consider data for the configured lookback window
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - MAX_LOOKBACK_DAYS);
+  const cutoffStr = Utilities.formatDate(cutoff, Session.getScriptTimeZone(), "yyyy-MM-dd");
+  Logger.log(`Considering dates from ${cutoffStr} to ${yesterdayStr}. Scanning ${rowCount} row(s)...`);
 
   // Collect rows that have a date but no precipitation value
   const missingRows = []; // [{ row, date }]
@@ -82,7 +87,8 @@ function run() {
       ? Utilities.formatDate(cellValue, Session.getScriptTimeZone(), "yyyy-MM-dd")
       : String(cellValue).substring(0, 10);
 
-    if (dateStr > yesterdayStr) continue;
+    // Skip future dates and dates older than cutoff days
+    if (dateStr > yesterdayStr || dateStr < cutoffStr) continue;
 
     missingRows.push({ row: DATA_START_ROW + i, date: dateStr });
   }
