@@ -49,7 +49,11 @@ function getColumnIndicesFromHeader(sheet) {
 function run() {
   Logger.log("=== run() started ===");
 
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("recordings");
+  if (!sheet) {
+    Logger.log('Sheet "recordings" not found — exiting.');
+    return;
+  }
   const lastRow = sheet.getLastRow();
 
   if (lastRow < DATA_START_ROW) {
